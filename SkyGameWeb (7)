@@ -1,0 +1,245 @@
+
+\
+from js import document, setInterval, clearInterval, Audio, console
+import random
+from pyscript import display
+
+# عناصر الواجهة
+menu = document.getElementById("menu")
+start_btn = document.getElementById("start-btn")
+exit_btn = document.getElementById("exit-btn")
+game_area = document.getElementById("game-area")
+status = document.getElementById("status")
+
+# إعداد الحالة
+enemies = []
+bullets = []
+score = 0
+game_over = False
+timers = []  # to store intervals so we can clear them
+
+# assets (ضع ملفاتك في مجلد assets)
+PLANE_IMG = "assets/plane.png"
+ENEMY_IMG = "assets/enemy.png"
+BULLET_IMG = "assets/bullet.png"
+EXPLOSION_IMG = "assets/explosion.png"
+MUSIC = "assets/music.mp3"
+EXPLOSION_SOUND = "assets/explosion.mp3"
+
+# helper
+def create_div(cls, width=50, height=50, left=0, top=0, bg=None):
+    el = document.createElement("div")
+    el.className = cls
+    el.style.width = f"{width}px"
+    el.style.height = f"{height}px"
+    el.style.left = f"{left}px"
+    el.style.top = f"{top}px"
+    if bg:
+        el.style.backgroundImage = f"url('{bg}')"
+    return el
+
+# create plane (hidden until start)
+plane = create_div("plane", 60, 60, 150, 520, PLANE_IMG)
+game_area.appendChild(plane)
+
+# audio (plays only if assets exist and browser allows autoplay)
+try:
+    bg_music = Audio.new(MUSIC)
+    bg_music.loop = True
+except Exception as e:
+    bg_music = None
+    console.log("no bg music available or blocked by browser:", e)
+
+def start_game(ev=None):
+    global score, game_over, enemies, bullets, timers
+    score = 0
+    game_over = False
+    enemies = []
+    bullets = []
+    status.innerHTML = ""
+    menu.style.display = "none"
+    game_area.style.display = "block"
+    plane.style.display = "block"
+    plane.style.left = "150px"
+    plane.style.top = "520px"
+    # try play music
+    try:
+        if bg_music:
+            bg_music.play()
+    except:
+        pass
+    # spawn enemies and move loops
+    timers.append(setInterval(create_enemy, 1200))
+    timers.append(setInterval(move_enemies, 50))
+    timers.append(setInterval(move_bullets, 30))
+    timers.append(setInterval(check_collision, 100))
+
+def exit_game(ev=None):
+    # Hide everything and show exit message
+    menu.style.display = "none"
+    game_area.style.display = "none"
+    status.innerHTML = "<h3>شكراً! تمت الخروج من اللعبة.</h3>"
+
+# attach menu buttons
+start_btn.addEventListener("click", start_game)
+exit_btn.addEventListener("click", exit_game)
+
+# keyboard controls
+def on_key(ev):
+    if game_over: return
+    key = ev.key
+    left = int(plane.style.left.replace("px",""))
+    top = int(plane.style.top.replace("px",""))
+    if key == "ArrowLeft":
+        plane.style.left = f'{max(0, left-20)}px'
+    elif key == "ArrowRight":
+        plane.style.left = f'{min(300, left+20)}px'
+    elif key == "ArrowUp":
+        plane.style.top = f'{max(0, top-20)}px'
+    elif key == "ArrowDown":
+        plane.style.top = f'{min(580, top+20)}px'
+    elif key == " ":
+        shoot()
+
+document.addEventListener("keydown", on_key)
+
+# touch controls (tap left/right half)
+game_area.addEventListener("touchstart", lambda ev: touch_start(ev))
+
+def touch_start(ev):
+    # single touch: move plane toward touch x
+    try:
+        t = ev.touches.item(0)
+        x = int(t.clientX) - game_area.getBoundingClientRect().left
+        left = int(plane.style.left.replace("px",""))
+        # center plane on x (approx)
+        plane.style.left = f'{max(0, min(300, x-30))}px'
+    except:
+        pass
+
+def create_enemy():
+    if game_over: return
+    left = random.randint(0, 300)
+    enemy = create_div("enemy", 60, 60, left, 0, ENEMY_IMG)
+    game_area.appendChild(enemy)
+    enemies.append(enemy)
+
+def move_enemies():
+    for enemy in enemies[:]:
+        top = int(enemy.style.top.replace("px",""))
+        enemy.style.top = f"{top+4}px"
+        if top > 620:
+            try:
+                game_area.removeChild(enemy)
+            except:
+                pass
+            enemies.remove(enemy)
+
+def shoot():
+    if game_over: return
+    left = int(plane.style.left.replace("px",""))
+    top = int(plane.style.top.replace("px",""))
+    bullet = create_div("bullet", 8, 20, left+26, top-20, BULLET_IMG)
+    game_area.appendChild(bullet)
+    bullets.append(bullet)
+
+def move_bullets():
+    global score
+    for b in bullets[:]:
+        top = int(b.style.top.replace("px",""))
+        b.style.top = f"{top-8}px"
+        if top < -20:
+            try:
+                game_area.removeChild(b)
+            except:
+                pass
+            bullets.remove(b)
+        else:
+            # check collision with enemies
+            for e in enemies[:]:
+                if collides(b, e):
+                    # explosion visual (swap bg) then remove
+                    try:
+                        e.style.backgroundImage = f"url('{EXPLOSION_IMG}')"
+                    except:
+                        pass
+                    # play explosion sound if available
+                    try:
+                        Audio.new(EXPLOSION_SOUND).play()
+                    except:
+                        pass
+                    try:
+                        game_area.removeChild(b)
+                    except:
+                        pass
+                    if b in bullets: bullets.remove(b)
+                    try:
+                        game_area.removeChild(e)
+                    except:
+                        pass
+                    if e in enemies: enemies.remove(e)
+                    score += 1
+                    status.innerHTML = f"النقاط: {score}"
+                    break
+
+def collides(a, b):
+    ax = int(a.style.left.replace("px",""))
+    ay = int(a.style.top.replace("px",""))
+    aw = int(a.style.width.replace("px",""))
+    ah = int(a.style.height.replace("px",""))
+    bx = int(b.style.left.replace("px",""))
+    by = int(b.style.top.replace("px",""))
+    bw = int(b.style.width.replace("px",""))
+    bh = int(b.style.height.replace("px",""))
+    return not (ax+aw < bx or ax > bx+bw or ay+ah < by or ay > by+bh)
+
+def check_collision():
+    global game_over
+    if game_over: return
+    px = int(plane.style.left.replace("px",""))
+    py = int(plane.style.top.replace("px",""))
+    pw = int(plane.style.width.replace("px",""))
+    ph = int(plane.style.height.replace("px",""))
+    for e in enemies[:]:
+        if not e: continue
+        ex = int(e.style.left.replace("px",""))
+        ey = int(e.style.top.replace("px",""))
+        ew = int(e.style.width.replace("px",""))
+        eh = int(e.style.height.replace("px",""))
+        if not (px+pw < ex or px > ex+ew or py+ph < ey or py > ey+eh):
+            # collision!
+            game_over = True
+            try:
+                if bg_music: bg_music.pause()
+            except:
+                pass
+            try:
+                Audio.new(EXPLOSION_SOUND).play()
+            except:
+                pass
+            plane.style.backgroundImage = f"url('{EXPLOSION_IMG}')"
+            status.innerHTML = f"💀 انتهت اللعبة! مجموع نقاطك: {score}"
+            # clear intervals
+            try:
+                for t in timers:
+                    clearInterval(t)
+            except:
+                pass
+            # show menu after short delay
+            def show_menu(ev=None):
+                menu.style.display = "block"
+                game_area.style.display = "none"
+            setInterval(show_menu, 1000, 1)
+
+# small helper for setInterval with limited repeats (PyScript compatibility)
+def setInterval(func, ms, repeats=0):
+    # When repeats==0 -> infinite
+    from js import setInterval as jsSetInterval
+    return jsSetInterval(func, ms)
+
+def clearInterval(timer):
+    from js import clearInterval as jsClear
+    try:
+        jsClear(timer)
+    except:
+        pass
